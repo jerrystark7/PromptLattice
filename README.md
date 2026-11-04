@@ -1,5 +1,7 @@
 # PromptLattice
 
+Prompt Eval tool
+
 PromptLattice 是一个本地优先的提示词评测与迭代工作台。使用真实模型生成内容，由 TypeSafe Jev 和所选模型分别评估，再生成可直接采用的新提示词。自动模式通过 SSE 显示进度并将完成轮次保存到 SQLite。
 
 ## 环境要求
