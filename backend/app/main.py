@@ -88,7 +88,13 @@ async def test_connection(request: ConnectionRequest) -> dict[str, Any]:
     try:
         provider_for(request.model.provider, request.model.region)
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            reply, usage = await chat(client, request.model.provider, request.model.model, request.model.region, request.target_api_key, [{"role": "user", "content": "Reply with the single word: connected"}], {"temperature": 0, "max_tokens": 12})
+            # DeepSeek defaults to thinking mode; disable it for this short
+            # connectivity probe so a tiny token budget cannot be consumed by
+            # reasoning without producing a user-facing answer.
+            probe_params = {"temperature": 0, "max_tokens": 64}
+            if request.model.provider == "deepseek":
+                probe_params["thinking"] = "disabled"
+            reply, usage = await chat(client, request.model.provider, request.model.model, request.model.region, request.target_api_key, [{"role": "user", "content": "Reply with the single word: connected"}], probe_params)
         return {"ok": True, "reply": reply[:100], "usage": usage}
     except ValueError as exc:
         raise HTTPException(400, detail={"kind": "invalid_provider", "message": str(exc)}) from exc

@@ -44,6 +44,80 @@ def usage_record(raw: dict[str, Any]) -> dict[str, int | None]:
     return {"input_tokens": raw.get("prompt_tokens", raw.get("input_tokens")), "output_tokens": raw.get("completion_tokens", raw.get("output_tokens")), "total_tokens": raw.get("total_tokens")}
 
 
+def _text_content(value: Any) -> str:
+    """Read visible text from common OpenAI-compatible content representations."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                # Chat Completions use text; Responses uses output_text.
+                text = item.get("text")
+                if isinstance(text, str) and item.get("type") in (None, "text", "output_text", "input_text"):
+                    parts.append(text)
+        return "".join(parts)
+    if isinstance(value, dict):
+        return _text_content(value.get("content")) or _text_content(value.get("text"))
+    return ""
+
+
+def completion_text(data: Any) -> tuple[str, bool]:
+    """Normalize Chat Completions and Responses API output to visible text.
+
+    Returns (text, has_reasoning_only) so internal reasoning is never mistaken
+    for the model's user-facing answer.
+    """
+    if not isinstance(data, dict):
+        return "", False
+
+    # OpenAI Responses API and compatible response envelopes.
+    text = _text_content(data.get("output_text"))
+    if text.strip():
+        return text, False
+    output = data.get("output")
+    if isinstance(output, list):
+        parts = []
+        for item in output:
+            if isinstance(item, dict):
+                if item.get("type") in ("message", "output_text", None):
+                    parts.append(_text_content(item.get("content", item.get("text"))))
+        text = "".join(parts)
+        if text.strip():
+            return text, False
+
+    # OpenAI Chat Completions and the compatible endpoints used by providers.
+    choices = data.get("choices")
+    reasoning_found = False
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict):
+                text = _text_content(message.get("content"))
+                if text.strip():
+                    return text, False
+                reasoning_found = reasoning_found or bool(
+                    _text_content(message.get("reasoning_content")).strip()
+                )
+            # Some OpenAI-compatible servers return legacy text completions.
+            text = _text_content(choice.get("text"))
+            if text.strip():
+                return text, False
+
+    # A few gateways wrap their upstream response under data/response.
+    for key in ("data", "response"):
+        nested = data.get(key)
+        if isinstance(nested, dict) and nested is not data:
+            text, nested_reasoning = completion_text(nested)
+            if text.strip() or nested_reasoning:
+                return text, nested_reasoning
+    return "", reasoning_found
+
+
 async def chat(client: httpx.AsyncClient, provider: str, model: str, region: str | None, key: str, messages: list[dict[str, str]], params: dict[str, Any]) -> tuple[str, dict[str, int | None]]:
     url, payload = build_chat_payload(provider, model, region, messages, params)
     try:
@@ -54,15 +128,16 @@ async def chat(client: httpx.AsyncClient, provider: str, model: str, region: str
         raise TaskError(f"无法连接模型服务：{exc.__class__.__name__}", "connection_error") from exc
     if response.is_error:
         raise provider_error(response.status_code, response.text)
-    data = response.json()
     try:
-        content = data["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(str(x.get("text", "")) if isinstance(x, dict) else str(x) for x in content)
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise TaskError("模型返回格式不符合 Chat Completions 规范。", "invalid_response") from exc
+        data = response.json()
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise TaskError("模型返回的内容不是有效 JSON，无法读取生成结果。", "invalid_response") from exc
+    content, reasoning_only = completion_text(data)
+    if not content.strip():
+        if reasoning_only:
+            raise TaskError("模型只返回了推理内容，没有最终回答。请增加最大输出 Token 后重试。", "reasoning_only")
+        keys = ", ".join(list(data.keys())[:8]) if isinstance(data, dict) else "未知"
+        raise TaskError(f"模型响应中没有可显示的文本内容（响应字段：{keys or '无'}）。请检查模型接口或模型 ID。", "invalid_response")
     return content, usage_record(data.get("usage") or {})
 
 

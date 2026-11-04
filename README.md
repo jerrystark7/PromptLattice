@@ -41,7 +41,7 @@ npm run dev
 | Moonshot / Kimi | 中国内地 / 国际站 | `kimi-k2.5`、`moonshot-v1-8k`、`moonshot-v1-32k` | `.cn` / `.ai` 区域入口 | Temperature、Top-p、最大输出 Token；不发送 Top-k |
 | OpenAI GPT | 默认 | `gpt-4.1-mini`、`gpt-4.1`、`gpt-4o-mini` | `api.openai.com` | Temperature、Top-p、最大输出 Token；不发送 Top-k |
 
-模型选项只是便于上手的示例。服务商列表可能调整，模型 ID 输入框允许手动填写；能否使用最终取决于服务商账号、地区和模型权限。参数能力在后端集中管理；不支持的参数会禁用且不发送。服务商可能忽略特定模型的参数，界面会对已知推理模式显示提示。
+模型选项只是便于上手的示例。服务商列表可能调整，模型 ID 输入框允许手动填写；能否使用最终取决于服务商账号、地区和模型权限。参数能力在后端集中管理；不支持的参数会禁用且不发送。服务商可能忽略特定模型的参数，界面会对已知推理模式显示提示。连接测试会单独为 DeepSeek 关闭思考模式并留出足够的短回复 Token；正常评测遵从模型默认模式。若模型只返回推理内容而没有最终回答，服务端会提示增加最大输出 Token，不会把推理文本当作生成结果。
 
 ## API Key 与数据处理
 
@@ -69,13 +69,14 @@ npm run dev
 
 - [TypeSafe System One API / Noul 响应格式](https://api.typesafe.ai/redoc) · [OpenAPI Swagger](https://api.typesafe.ai/docs)
 - [DeepSeek API 文档](https://api-docs.deepseek.com/)
+- [DeepSeek Chat Completions 接口与 thinking 参数](https://api-docs.deepseek.com/api/create-chat-completion) · [DeepSeek Responses 接口](https://api-docs.deepseek.com/api/create-response)
 - [阿里云百炼 Model Studio 兼容模式](https://help.aliyun.com/zh/model-studio/compatible-mode)
 - [Moonshot / Kimi API 快速开始](https://platform.moonshot.ai/docs/guide/start-using-kimi-api) · [中国区文档](https://platform.moonshot.cn/docs/intro)
 - [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create)
 
 ## 已知限制
 
-- 当前通过各服务商的 OpenAI 兼容 Chat Completions 接口调用；个别新模型可能仅支持 Responses API 或专有参数，此类模型需自行确认兼容性。
+- 请求通过各服务商的 OpenAI 兼容 Chat Completions 接口发送，并将 Chat Completions 与常见 Responses API 文本响应统一解析。若某个模型或网关只开放 Responses API、或使用专有请求参数，当前版本仍需该服务商提供 Chat Completions 兼容入口。
 - 自动优化使用单条测试输入迭代；分数可能受采样随机性和评审模型判断影响，不能代替代表性测试集或人工复核。
 - 首版不提供多用户鉴权、API Key 加密持久化、云端数据库、费用预估或后台任务队列。若重启后端，正在进行的 SSE 任务无法恢复；已完成轮次仍保留。
 - TypeSafe Key 需在 TypeSafe 开发者控制台申请；本地未提供 Key 时不能完成真实模型或 Jev 联调。

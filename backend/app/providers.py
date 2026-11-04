@@ -64,4 +64,10 @@ def build_chat_payload(provider: str, model: str, region: str | None, messages: 
     for name in ("temperature", "top_p", "top_k", "max_tokens"):
         if values.get(name) is not None and supported[name]["supported"]:
             payload[name] = values[name]
+    # DeepSeek enables thinking mode by default. Connection checks intentionally
+    # disable it so their small response budget is reserved for a visible reply.
+    # Normal generation leaves the provider default untouched unless requested.
+    thinking = values.get("thinking")
+    if provider == "deepseek" and thinking in ("enabled", "disabled"):
+        payload["thinking"] = {"type": thinking}
     return f"{config.base_url}/chat/completions", payload
